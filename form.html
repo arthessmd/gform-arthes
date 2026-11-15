@@ -1,0 +1,33 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pendaftaran | Arthessmd</title><link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script></head>
+<body><div class="wrap" style="max-width:640px"><header class="hero"><img class="logo" src="logo.png" alt="Arthessmd"><h1 id="t">Pendaftaran</h1><p class="mut" id="d"></p><p id="info" style="color:var(--gold)"></p></header>
+<form id="f" class="panel" hidden>
+<label>Nama tim</label><input id="tn" required><label>Nama leader</label><input id="ld" required>
+<label>No. WhatsApp</label><input id="wa" type="tel" placeholder="08xxxxxxxxxx atau +62..." required><label>ID game leader</label><input id="gid" inputmode="numeric" required>
+<label>Nickname pemain 1</label><input id="p1" required><label>Nickname pemain 2</label><input id="p2" required><label>Nickname pemain 3</label><input id="p3" required>
+<label>Nickname pemain 4</label><input id="p4" required><label>Nickname pemain 5</label><input id="p5" required>
+<label>Cadangan (boleh kosong, pisahkan dengan koma)</label><input id="sb">
+<div class="row"><button class="on" id="go">Kirim pendaftaran</button></div></form>
+<div id="msg" class="panel" hidden></div></div>
+<script src="config.js"></script>
+<script>
+const id=new URLSearchParams(location.search).get('f');let F;
+const say=h=>{$('#f').hidden=true;$('#msg').hidden=false;$('#msg').innerHTML=h};
+(async()=>{
+ F=id&&(await db.from('forms').select('*').eq('id',id).maybeSingle()).data;
+ if(!F)return say('Form tidak ditemukan. Periksa kembali link Anda.');
+ $('#t').textContent='Pendaftaran '+F.title;$('#d').textContent=F.description;
+ const {count}=await db.from('registrations').select('id',{count:'exact',head:true}).eq('form_id',id);
+ if(F.quota)$('#info').textContent='Terisi '+count+' dari '+F.quota+' tim';
+ if(!F.is_open)return say('<b>Pendaftaran sudah ditutup.</b>');
+ if(F.quota&&count>=F.quota)return say('<b>Kuota penuh.</b> Pendaftaran tidak dapat dilanjutkan.');
+ $('#f').hidden=false})();
+$('#f').onsubmit=async e=>{e.preventDefault();$('#go').disabled=true;
+ const v=k=>$('#'+k).value.trim(),name=v('tn');
+ const {data:ex}=await db.from('registrations').select('team_name').eq('form_id',id);
+ if(ex.some(x=>x.team_name.toLowerCase()==name.toLowerCase())){alert('Nama tim sudah terdaftar. Gunakan nama lain.');$('#go').disabled=false;return}
+ const {error}=await db.from('registrations').insert({form_id:id,team_name:name,leader:v('ld'),whatsapp:v('wa'),leader_game_id:v('gid'),players:[1,2,3,4,5].map(k=>v('p'+k)),substitutes:v('sb').split(',').map(s=>s.trim()).filter(Boolean)});
+ if(error){alert('Gagal mengirim: '+error.message);$('#go').disabled=false;return}
+ say(`<h2 style="margin-top:0">Pendaftaran berhasil</h2><p>Tim <b>${esc(name)}</b> sudah terdaftar untuk ${esc(F.title)}.</p><p class="mut">Simpan screenshot ini sebagai bukti.</p>`)};
+</script></body></html>
