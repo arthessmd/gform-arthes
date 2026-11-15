@@ -2,35 +2,46 @@
 <title>Gform Arthes</title><link rel="stylesheet" href="style.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script></head>
-<body><div class="wrap"><header class="hero"><img class="logo" src="logo.png" alt="Arthessmd"><h1>Gform Arthes</h1><p class="mut">Buat form pendaftaran per tanggal, lalu ekspor hasilnya.</p></header>
+<body><div class="wrap"><header class="hero"><img class="logo" src="logo.png" alt="Arthessmd"><h1>Gform Arthes</h1><p class="mut">Buat form per tanggal, bagikan link sekali pakai, lalu ekspor hasilnya.</p></header>
 <div class="panel"><h2 style="margin-top:0">Buat form baru</h2>
 <label>Tanggal turnamen</label><input id="dt" type="date"><label>Deskripsi singkat (boleh kosong)</label><input id="ds">
 <label>Kuota tim (0 = tanpa batas)</label><input id="qt" type="number" min="0" value="0">
-<div class="row"><button class="on" onclick="create()">Buat form dan dapatkan link</button></div></div>
+<div class="row"><button class="on" onclick="create()">Buat form</button></div></div>
 <div id="new"></div><h2>Form yang sudah dibuat</h2><div id="l"></div></div>
 <script src="config.js"></script>
 <script>
-let F=[],R={};$('#dt').valueAsDate=new Date();
-const link=id=>new URL('form.html?f='+id,location.href).href;
-async function load(){const [f,r]=await Promise.all([db.from('forms').select('*').order('event_date',{ascending:false}),db.from('registrations').select('*').order('created_at')]);
+let F=[],R={},I={};$('#dt').valueAsDate=new Date();
+const link=t=>new URL('form.html?t='+t,location.href).href;
+const tok=()=>{const a=new Uint8Array(12);crypto.getRandomValues(a);return [...a].map(b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')};
+const group=(d,o)=>(d||[]).forEach(x=>(o[x.form_id]??=[]).push(x));
+async function load(){const [f,r,i]=await Promise.all([db.from('forms').select('*').order('event_date',{ascending:false}),db.from('registrations').select('*').order('created_at'),db.from('invites').select('*').order('created_at')]);
  if(f.error)return $('#l').innerHTML='<p class="mut">Gagal memuat: '+esc(f.error.message)+'</p>';
- F=f.data;R={};(r.data||[]).forEach(x=>(R[x.form_id]??=[]).push(x));draw()}
-function draw(){$('#l').innerHTML=F.map(f=>{const rs=R[f.id]||[];return `<div class="panel"><div style="font:italic 700 1.4rem 'Chakra Petch'">${esc(f.title)} <span class="tag">${rs.length}${f.quota?'/'+f.quota:''} tim, ${f.is_open?'dibuka':'ditutup'}</span></div>
- <p class="mut" style="margin:2px 0">${esc(f.description)}</p><p style="word-break:break-all;margin:8px 0"><a href="${link(f.id)}" target="_blank" style="color:var(--gold)">${link(f.id)}</a></p>
- <div class="row"><button class="on" onclick="cp(this,'${link(f.id)}')">Salin link form</button><button onclick="cpTxt('${f.id}',this)">Salin teks bracket</button><button onclick="dlTxt('${f.id}')">Unduh TXT</button><button onclick="dlXls('${f.id}')">Unduh Excel</button><button onclick="tog('${f.id}',${!f.is_open})">${f.is_open?'Tutup form':'Buka form'}</button><button onclick="delF('${f.id}')">Hapus</button></div>
- <details><summary>Lihat pendaftar (${rs.length})</summary><div style="overflow-x:auto"><table><tr><th>#</th><th>Tim</th><th>Leader</th><th>WhatsApp</th><th></th></tr>${rs.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.team_name)}</td><td>${esc(r.leader)}</td><td>${esc(r.whatsapp)}</td><td><button onclick="delR('${r.id}')">Hapus</button></td></tr>`).join('')}</table></div></details></div>`}).join('')||'<p class="mut">Belum ada form.</p>'}
+ F=f.data;R={};I={};group(r.data,R);group(i.data,I);draw()}
+function draw(){const open=new Set([...document.querySelectorAll('details[open]')].map(d=>d.id));
+ $('#l').innerHTML=F.map(f=>{const rs=R[f.id]||[],iv=I[f.id]||[],un=iv.filter(x=>!x.used);return `<div class="panel"><div style="font:italic 700 1.4rem 'Chakra Petch'">${esc(f.title)} <span class="tag">${rs.length}${f.quota?'/'+f.quota:''} tim, ${f.is_open?'dibuka':'ditutup'}</span></div>
+ <p class="mut" style="margin:2px 0 10px">${esc(f.description)}</p>
+ <div class="row"><input id="n${f.id}" type="number" min="1" max="200" value="5" style="width:90px"><button class="on" onclick="gen('${f.id}')">Buat link satu kali pakai</button><button onclick="cpAll('${f.id}',this)">Salin semua link belum dipakai (${un.length})</button></div>
+ <details id="i${f.id}" ${open.has('i'+f.id)?'open':''}><summary>Link peserta (${iv.length-un.length} dipakai dari ${iv.length})</summary><div class="row"><button onclick="clrI('${f.id}',true)">Hapus semua link terpakai (${iv.length-un.length})</button><button onclick="clrI('${f.id}',false)">Hapus semua link belum dipakai (${un.length})</button></div><div style="overflow-x:auto"><table>${iv.map((x,k)=>`<tr><td>${k+1}</td><td>${x.used?'Dipakai: '+esc(x.team_name):'Belum dipakai'}</td><td style="word-break:break-all"><small>${x.used?'':link(x.token)}</small></td><td>${x.used?'':`<button onclick="cp(this,'${link(x.token)}')">Salin</button>`}</td><td><button onclick="delI('${x.id}')">Hapus link</button></td></tr>`).join('')}</table></div></details>
+ <div class="row"><button onclick="cpTxt('${f.id}',this)">Salin teks bracket</button><button onclick="dlTxt('${f.id}')">Unduh TXT</button><button onclick="dlXls('${f.id}')">Unduh Excel</button><button onclick="tog('${f.id}',${!f.is_open})">${f.is_open?'Tutup form':'Buka form'}</button><button onclick="delF('${f.id}')">Hapus</button></div>
+ <details id="r${f.id}" ${open.has('r'+f.id)?'open':''}><summary>Lihat pendaftar (${rs.length})</summary><div style="overflow-x:auto"><table><tr><th>#</th><th>Tim</th><th>Leader</th><th>WhatsApp</th><th></th></tr>${rs.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.team_name)}</td><td>${esc(r.leader)}</td><td>${esc(r.whatsapp)}</td><td><button onclick="delR('${r.id}')">Hapus</button></td></tr>`).join('')}</table></div></details></div>`}).join('')||'<p class="mut">Belum ada form.</p>'}
 async function create(){const d=$('#dt').value;if(!d)return alert('Pilih tanggal dulu.');
  const {data,error}=await db.from('forms').insert({title:fmt(d),event_date:d,description:$('#ds').value.trim(),quota:+$('#qt').value||0}).select().single();
  if(error)return alert(error.message);
- $('#new').innerHTML=`<div class="panel ok"><b>Form ${esc(data.title)} siap. Bagikan link ini ke peserta:</b><p style="word-break:break-all;color:var(--gold)">${link(data.id)}</p><button class="on" onclick="cp(this,'${link(data.id)}')">Salin link form</button></div>`;load()}
+ $('#new').innerHTML=`<div class="panel ok"><b>Form ${esc(data.title)} dibuat.</b> Sekarang buat link satu kali pakai untuk peserta di bagian bawah.</div>`;load()}
+async function gen(id){const n=Math.min(200,Math.max(1,+$('#n'+id).value||1));
+ const {error}=await db.from('invites').insert(Array.from({length:n},()=>({form_id:id,token:tok()})));if(error)return alert(error.message);
+ document.getElementById('i'+id)&&(await load(),document.getElementById('i'+id).open=true)}
 function cp(b,u){navigator.clipboard.writeText(u);b.textContent='Tersalin'}
+function cpAll(id,b){const u=(I[id]||[]).filter(x=>!x.used).map(x=>link(x.token));if(!u.length)return alert('Belum ada link yang tersedia. Buat link dulu.');navigator.clipboard.writeText(u.join('\n'));b.textContent=u.length+' link tersalin'}
 const get=id=>[F.find(f=>f.id==id),R[id]||[]];
 function cpTxt(id,b){const [f,r]=get(id);navigator.clipboard.writeText(toTxt(f,r));b.textContent='Teks tersalin'}
 function dlTxt(id){const [f,r]=get(id);save('pendaftaran-'+f.title.replace(/\s/g,'-')+'.txt',new Blob([toTxt(f,r)],{type:'text/plain'}))}
 function dlXls(id){const [f,r]=get(id);const rows=r.map((x,i)=>({No:i+1,'Nama Tim':x.team_name,'Nama Leader':x.leader,'No. WhatsApp':x.whatsapp,'ID Game Leader':x.leader_game_id,'Pemain 1':x.players[0]||'','Pemain 2':x.players[1]||'','Pemain 3':x.players[2]||'','Pemain 4':x.players[3]||'','Pemain 5':x.players[4]||'',Cadangan:(x.substitutes||[]).join(', '),'Waktu daftar':new Date(x.created_at).toLocaleString('id-ID')}));
  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(rows),'Pendaftar');XLSX.writeFile(wb,'pendaftaran-'+f.title.replace(/\s/g,'-')+'.xlsx')}
 async function tog(id,v){await db.from('forms').update({is_open:v}).eq('id',id);load()}
-async function delF(id){if(confirm('Hapus form ini beserta semua pendaftarnya?')){await db.from('forms').delete().eq('id',id);load()}}
+async function delF(id){if(confirm('Hapus form ini beserta semua link dan pendaftarnya?')){await db.from('forms').delete().eq('id',id);load()}}
 async function delR(id){if(confirm('Hapus pendaftar ini?')){await db.from('registrations').delete().eq('id',id);load()}}
+async function clrI(id,used){if(confirm(used?'Hapus semua link yang sudah dipakai? Data pendaftar tidak ikut terhapus.':'Hapus semua link yang belum dipakai?')){await db.from('invites').delete().eq('form_id',id).eq('used',used);load()}}
+async function delI(id){if(confirm('Hapus link ini?')){await db.from('invites').delete().eq('id',id);load()}}
 load();
 </script></body></html>
