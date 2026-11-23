@@ -3,35 +3,58 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script></head>
 <body><div class="wrap" style="max-width:640px"><header class="hero"><img class="logo" src="logo.png" alt="Arthessmd"><h1 id="t">Pendaftaran</h1><p class="mut" id="d"></p><p id="info" style="color:var(--gold)"></p></header>
 <form id="f" class="panel" hidden>
+<fieldset id="fsTeam" hidden disabled>
 <label>Nama tim</label><input id="tn" required><label>Nama leader</label><input id="ld" required>
 <label>No. WhatsApp</label><input id="wa" type="tel" placeholder="08xxxxxxxxxx atau +62..." required><label>ID game leader</label><input id="gid" inputmode="numeric" required>
 <label>Nickname pemain 1</label><input id="p1" required><label>Nickname pemain 2</label><input id="p2" required><label>Nickname pemain 3</label><input id="p3" required>
 <label>Nickname pemain 4</label><input id="p4" required><label>Nickname pemain 5</label><input id="p5" required>
 <label>Cadangan (boleh kosong, pisahkan dengan koma)</label><input id="sb">
+</fieldset>
+<fieldset id="fsSolo" hidden disabled>
+<label>Nama</label><input id="sn" required autocomplete="name">
+<label>ID game</label><input id="sid" inputmode="numeric" required>
+<label>No. WhatsApp</label><input id="sw" type="tel" placeholder="08xxxxxxxxxx atau +62..." required>
+</fieldset>
 <p class="mut">Link ini hanya bisa dipakai satu kali. Pastikan data sudah benar sebelum mengirim.</p>
 <div class="row"><button class="on" id="go">Kirim pendaftaran</button></div></form>
 <div id="msg" class="panel" hidden></div></div>
 <script src="config.js"></script>
 <script>
-const tk=new URLSearchParams(location.search).get('t');let F,V;
+const tk=new URLSearchParams(location.search).get('t');let S;
 const say=h=>{$('#f').hidden=true;$('#msg').hidden=false;$('#msg').innerHTML=h};
+const solo=()=>S&&S.kind==='solo';
+const waOk=w=>/^\+?\d{9,15}$/.test(w.replace(/[\s-]/g,''));
+const dead={
+ invalid:'<b>Link tidak valid.</b> Minta link baru kepada panitia.',
+ used:'<b>Link ini sudah dipakai.</b> Setiap link hanya bisa digunakan satu kali.',
+ closed:'<b>Pendaftaran sudah ditutup.</b>',
+ full:'<b>Kuota penuh.</b> Pendaftaran tidak dapat dilanjutkan.'};
 (async()=>{
- V=tk&&(await db.from('invites').select('*').eq('token',tk).maybeSingle()).data;
- if(!V)return say('<b>Link tidak valid.</b> Minta link baru kepada panitia.');
- if(V.used)return say('<b>Link ini sudah dipakai.</b> Setiap link hanya bisa digunakan satu kali.');
- F=(await db.from('forms').select('*').eq('id',V.form_id).single()).data;
- $('#t').textContent='Pendaftaran '+F.title;$('#d').textContent=F.description;
- if(!F.is_open)return say('<b>Pendaftaran sudah ditutup.</b>');
- const {count}=await db.from('registrations').select('id',{count:'exact',head:true}).eq('form_id',F.id);
- if(F.quota&&count>=F.quota)return say('<b>Kuota penuh.</b> Pendaftaran tidak dapat dilanjutkan.');
+ if(!tk)return say(dead.invalid);
+ const {data,error}=await db.rpc('check_invite',{p_token:tk});
+ if(error||!data)return say('<b>Gagal memuat form.</b> Coba muat ulang halaman.');
+ S=data;
+ if(S.status==='invalid')return say(dead.invalid);
+ $('#t').textContent='Pendaftaran '+(solo()?'Solo ':'')+S.title;$('#d').textContent=S.description||'';
+ if(S.status!=='ok')return say(dead[S.status]);
+ if(S.quota)$('#info').textContent='Sisa slot '+(solo()?'solo':'tim')+': '+Math.max(0,S.quota-S.count);
+ const on=$(solo()?'#fsSolo':'#fsTeam');on.hidden=false;on.disabled=false;
  $('#f').hidden=false})();
-$('#f').onsubmit=async e=>{e.preventDefault();$('#go').disabled=true;
- const v=k=>$('#'+k).value.trim(),name=v('tn'),bad=m=>{alert(m);$('#go').disabled=false};
- const {data:ex}=await db.from('registrations').select('team_name').eq('form_id',F.id);
- if(ex.some(x=>x.team_name.toLowerCase()==name.toLowerCase()))return bad('Nama tim sudah terdaftar. Gunakan nama lain.');
- const {data:c}=await db.from('invites').update({used:true,used_at:new Date().toISOString(),team_name:name}).eq('token',tk).eq('used',false).select();
- if(!c||!c.length)return say('<b>Link ini sudah dipakai.</b> Setiap link hanya bisa digunakan satu kali.');
- const {error}=await db.from('registrations').insert({form_id:F.id,team_name:name,leader:v('ld'),whatsapp:v('wa'),leader_game_id:v('gid'),players:[1,2,3,4,5].map(k=>v('p'+k)),substitutes:v('sb').split(',').map(s=>s.trim()).filter(Boolean)});
- if(error){await db.from('invites').update({used:false,used_at:null,team_name:null}).eq('token',tk);return bad('Gagal mengirim: '+error.message)}
- say(`<h2 style="margin-top:0">Pendaftaran berhasil</h2><p>Tim <b>${esc(name)}</b> sudah terdaftar untuk ${esc(F.title)}.</p><p class="mut">Link ini sudah tidak bisa dipakai lagi. Simpan screenshot ini sebagai bukti.</p>`)};
+$('#f').onsubmit=async e=>{e.preventDefault();const go=$('#go');go.disabled=true;
+ const v=k=>$('#'+k).value.trim(),bad=m=>{alert(m);go.disabled=false};
+ let args,label;
+ if(solo()){
+  if(!waOk(v('sw')))return bad('Nomor WhatsApp tidak valid.');
+  label=v('sn');args={p_token:tk,p_team:null,p_leader:label,p_wa:v('sw'),p_gid:v('sid'),p_players:[],p_subs:[]};
+ }else{
+  if(!waOk(v('wa')))return bad('Nomor WhatsApp tidak valid.');
+  label=v('tn');args={p_token:tk,p_team:label,p_leader:v('ld'),p_wa:v('wa'),p_gid:v('gid'),
+   p_players:[1,2,3,4,5].map(k=>v('p'+k)),p_subs:v('sb').split(',').map(s=>s.trim()).filter(Boolean)};
+ }
+ const {data:r,error}=await db.rpc('submit_registration',args);
+ if(error)return bad('Gagal mengirim: '+error.message);
+ if(r==='duplicate')return bad(solo()?'ID game ini sudah terdaftar untuk tanggal ini.':'Nama tim sudah terdaftar. Gunakan nama lain.');
+ if(r==='incomplete')return bad('Semua kolom wajib diisi.');
+ if(r!=='ok')return say(dead[r]||dead.invalid);
+ say(`<h2 style="margin-top:0">Pendaftaran berhasil</h2><p>${solo()?'Peserta solo':'Tim'} <b>${esc(label)}</b> sudah terdaftar untuk ${esc(S.title)}.</p><p class="mut">Link ini sudah tidak bisa dipakai lagi. Simpan screenshot ini sebagai bukti.</p>`)};
 </script></body></html>
