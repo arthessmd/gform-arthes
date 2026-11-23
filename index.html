@@ -11,33 +11,39 @@
 <div id="new"></div><h2>Form yang sudah dibuat</h2><div id="l"></div></div>
 <script src="config.js"></script>
 <script>
-let F=[],R={},I={};$('#dt').valueAsDate=new Date();
+let F=[],R={},I={},TB={};$('#dt').valueAsDate=new Date();
 const link=t=>new URL('form.html?t='+t,location.href).href;
 const tok=()=>{const a=new Uint8Array(12);crypto.getRandomValues(a);return [...a].map(b=>'abcdefghjkmnpqrstuvwxyz23456789'[b%31]).join('')};
 const group=(d,o)=>(d||[]).forEach(x=>(o[x.form_id]??=[]).push(x));
-const isSolo=x=>x.kind==='solo', KL=x=>isSolo(x)?'Solo':'Tim';
+const isSolo=x=>x.kind==='solo', tab=id=>TB[id]||'team', setTab=(id,k)=>{TB[id]=k;draw()};
 async function load(){const [f,r,i]=await Promise.all([db.from('forms').select('*').order('event_date',{ascending:false}),db.from('registrations').select('*').order('created_at'),db.from('invites').select('*').order('created_at')]);
  if(f.error)return $('#l').innerHTML='<p class="mut">Gagal memuat: '+esc(f.error.message)+'</p>';
  F=f.data;R={};I={};group(r.data,R);group(i.data,I);draw()}
 function draw(){const open=new Set([...document.querySelectorAll('details[open]')].map(d=>d.id));
- $('#l').innerHTML=F.map(f=>{const rs=R[f.id]||[],iv=I[f.id]||[],un=iv.filter(x=>!x.used);
-  const nT=rs.filter(x=>!isSolo(x)).length,nS=rs.filter(isSolo).length,uT=un.filter(x=>!isSolo(x)).length,uS=un.filter(isSolo).length;
-  return `<div class="panel"><div style="font:italic 700 1.4rem 'Chakra Petch'">${esc(f.title)} <span class="tag">${nT}${f.quota?'/'+f.quota:''} tim, ${nS}${f.solo_quota?'/'+f.solo_quota:''} solo, ${f.is_open?'dibuka':'ditutup'}</span></div>
+ $('#l').innerHTML=F.map(f=>{
+  const solo=tab(f.id)==='solo',nm=solo?'Solo':'Tim',all=R[f.id]||[],
+   rs=all.filter(x=>isSolo(x)==solo),iv=(I[f.id]||[]).filter(x=>isSolo(x)==solo),un=iv.filter(x=>!x.used),
+   nS=all.filter(isSolo).length,nT=all.length-nS,iK='i'+f.id+tab(f.id),rK='r'+f.id+tab(f.id);
+  const head=solo?'<th>#</th><th>Nama</th><th>ID Game</th><th>WhatsApp</th><th></th>':'<th>#</th><th>Tim</th><th>Leader</th><th>ID Game</th><th>WhatsApp</th><th></th>';
+  const body=rs.map((r,i)=>solo
+   ?`<tr><td>${i+1}</td><td>${esc(r.leader)}</td><td>${esc(r.leader_game_id)}</td><td>${esc(r.whatsapp)}</td><td><button onclick="delR('${r.id}')">Hapus</button></td></tr>`
+   :`<tr><td>${i+1}</td><td>${esc(r.team_name)}</td><td>${esc(r.leader)}</td><td>${esc(r.leader_game_id)}</td><td>${esc(r.whatsapp)}</td><td><button onclick="delR('${r.id}')">Hapus</button></td></tr>`).join('');
+  return `<div class="panel"><div style="font:italic 700 1.4rem 'Chakra Petch'">${esc(f.title)} <span class="tag">${f.is_open?'dibuka':'ditutup'}</span></div>
  <p class="mut" style="margin:2px 0 10px">${esc(f.description)}</p>
- <div class="row"><select id="k${f.id}" style="width:auto"><option value="team">Tim</option><option value="solo">Solo</option></select><input id="n${f.id}" type="number" min="1" max="200" value="5" style="width:90px"><button class="on" onclick="gen('${f.id}')">Buat link satu kali pakai</button></div>
- <div class="row"><button onclick="cpAll('${f.id}','team',this)">Salin link Tim belum dipakai (${uT})</button><button onclick="cpAll('${f.id}','solo',this)">Salin link Solo belum dipakai (${uS})</button></div>
- <details id="i${f.id}" ${open.has('i'+f.id)?'open':''}><summary>Link peserta (${iv.length-un.length} dipakai dari ${iv.length})</summary><div class="row"><button onclick="clrI('${f.id}',true)">Hapus semua link terpakai (${iv.length-un.length})</button><button onclick="clrI('${f.id}',false)">Hapus semua link belum dipakai (${un.length})</button></div><div style="overflow-x:auto"><table>${iv.map((x,k)=>`<tr><td>${k+1}</td><td>${KL(x)}</td><td>${x.used?'Dipakai: '+esc(x.used_by||x.team_name):'Belum dipakai'}</td><td style="word-break:break-all"><small>${x.used?'':link(x.token)}</small></td><td>${x.used?'':`<button onclick="cp(this,'${link(x.token)}')">Salin</button>`}</td><td><button onclick="delI('${x.id}')">Hapus link</button></td></tr>`).join('')}</table></div></details>
- <div class="row"><button onclick="cpTxt('${f.id}',this)">Salin teks bracket</button><button onclick="dlTxt('${f.id}')">Unduh TXT</button><button onclick="dlXls('${f.id}')">Unduh Excel</button><button onclick="tog('${f.id}',${!f.is_open})">${f.is_open?'Tutup form':'Buka form'}</button><button onclick="delF('${f.id}')">Hapus</button></div>
- <details id="r${f.id}" ${open.has('r'+f.id)?'open':''}><summary>Lihat pendaftar (${nT} tim, ${nS} solo)</summary><div style="overflow-x:auto"><table><tr><th>#</th><th>Jenis</th><th>Tim</th><th>Nama / Leader</th><th>ID Game</th><th>WhatsApp</th><th></th></tr>${rs.map((r,i)=>`<tr><td>${i+1}</td><td>${KL(r)}</td><td>${isSolo(r)?'-':esc(r.team_name)}</td><td>${esc(r.leader)}</td><td>${esc(r.leader_game_id)}</td><td>${esc(r.whatsapp)}</td><td><button onclick="delR('${r.id}')">Hapus</button></td></tr>`).join('')}</table></div></details></div>`}).join('')||'<p class="mut">Belum ada form.</p>'}
+ <div class="row seg"><button class="${solo?'':'on'}" onclick="setTab('${f.id}','team')">Tim (${nT}${f.quota?'/'+f.quota:''})</button><button class="${solo?'on':''}" onclick="setTab('${f.id}','solo')">Solo (${nS}${f.solo_quota?'/'+f.solo_quota:''})</button></div>
+ <div class="row"><input id="n${f.id}" type="number" min="1" max="200" value="5" style="width:90px"><button class="on" onclick="gen('${f.id}')">Buat link ${nm} satu kali pakai</button><button onclick="cpAll('${f.id}',this)">Salin semua link ${nm} belum dipakai (${un.length})</button></div>
+ <details id="${iK}" ${open.has(iK)?'open':''}><summary>Link ${nm} (${iv.length-un.length} dipakai dari ${iv.length})</summary><div class="row"><button onclick="clrI('${f.id}',true)">Hapus semua link ${nm} terpakai (${iv.length-un.length})</button><button onclick="clrI('${f.id}',false)">Hapus semua link ${nm} belum dipakai (${un.length})</button></div><div style="overflow-x:auto"><table>${iv.map((x,k)=>`<tr><td>${k+1}</td><td>${x.used?'Dipakai: '+esc(x.used_by||x.team_name):'Belum dipakai'}</td><td style="word-break:break-all"><small>${x.used?'':link(x.token)}</small></td><td>${x.used?'':`<button onclick="cp(this,'${link(x.token)}')">Salin</button>`}</td><td><button onclick="delI('${x.id}')">Hapus link</button></td></tr>`).join('')}</table></div></details>
+ <details id="${rK}" ${open.has(rK)?'open':''}><summary>Daftar pendaftar ${nm} (${rs.length})</summary><div style="overflow-x:auto"><table><tr>${head}</tr>${body||'<tr><td colspan="6" class="mut">Belum ada pendaftar '+nm+'.</td></tr>'}</table></div></details>
+ <div class="row"><button onclick="cpTxt('${f.id}',this)">Salin teks bracket</button><button onclick="dlTxt('${f.id}')">Unduh TXT</button><button onclick="dlXls('${f.id}')">Unduh Excel (Tim &amp; Solo)</button><button onclick="tog('${f.id}',${!f.is_open})">${f.is_open?'Tutup form':'Buka form'}</button><button onclick="delF('${f.id}')">Hapus form</button></div></div>`}).join('')||'<p class="mut">Belum ada form.</p>'}
 async function create(){const d=$('#dt').value;if(!d)return alert('Pilih tanggal dulu.');
  const {data,error}=await db.from('forms').insert({title:fmt(d),event_date:d,description:$('#ds').value.trim(),quota:+$('#qt').value||0,solo_quota:+$('#qs').value||0}).select().single();
  if(error)return alert(error.message);
  $('#new').innerHTML=`<div class="panel ok"><b>Form ${esc(data.title)} dibuat.</b> Sekarang buat link satu kali pakai (tim atau solo) untuk peserta di bagian bawah.</div>`;load()}
-async function gen(id){const n=Math.min(200,Math.max(1,+$('#n'+id).value||1)),kind=$('#k'+id).value;
+async function gen(id){const n=Math.min(200,Math.max(1,+$('#n'+id).value||1)),kind=tab(id);
  const {error}=await db.from('invites').insert(Array.from({length:n},()=>({form_id:id,token:tok(),kind})));if(error)return alert(error.message);
- await load();const d=document.getElementById('i'+id);if(d)d.open=true}
+ await load();const d=document.getElementById('i'+id+kind);if(d)d.open=true}
 function cp(b,u){navigator.clipboard.writeText(u);b.textContent='Tersalin'}
-function cpAll(id,kind,b){const u=(I[id]||[]).filter(x=>!x.used&&(isSolo(x)?'solo':'team')==kind).map(x=>link(x.token));if(!u.length)return alert('Belum ada link '+(kind=='solo'?'solo':'tim')+' yang tersedia. Buat link dulu.');navigator.clipboard.writeText(u.join('\n'));b.textContent=u.length+' link tersalin'}
+function cpAll(id,b){const kind=tab(id),u=(I[id]||[]).filter(x=>!x.used&&(isSolo(x)?'solo':'team')==kind).map(x=>link(x.token));if(!u.length)return alert('Belum ada link '+(kind=='solo'?'Solo':'Tim')+' yang tersedia. Buat link dulu.');navigator.clipboard.writeText(u.join('\n'));b.textContent=u.length+' link tersalin'}
 const get=id=>[F.find(f=>f.id==id),R[id]||[]];
 function cpTxt(id,b){const [f,r]=get(id);navigator.clipboard.writeText(toTxt(f,r));b.textContent='Teks tersalin'}
 function dlTxt(id){const [f,r]=get(id);save('pendaftaran-'+f.title.replace(/\s/g,'-')+'.txt',new Blob([toTxt(f,r)],{type:'text/plain'}))}
@@ -51,7 +57,7 @@ function dlXls(id){const [f,r]=get(id),T=r.filter(x=>!isSolo(x)),S=r.filter(isSo
 async function tog(id,v){await db.from('forms').update({is_open:v}).eq('id',id);load()}
 async function delF(id){if(confirm('Hapus form ini beserta semua link dan pendaftarnya?')){await db.from('forms').delete().eq('id',id);load()}}
 async function delR(id){if(confirm('Hapus pendaftar ini?')){await db.from('registrations').delete().eq('id',id);load()}}
-async function clrI(id,used){if(confirm(used?'Hapus semua link yang sudah dipakai? Data pendaftar tidak ikut terhapus.':'Hapus semua link yang belum dipakai?')){await db.from('invites').delete().eq('form_id',id).eq('used',used);load()}}
+async function clrI(id,used){const kind=tab(id),nm=kind=='solo'?'Solo':'Tim';if(confirm(used?'Hapus semua link '+nm+' yang sudah dipakai? Data pendaftar tidak ikut terhapus.':'Hapus semua link '+nm+' yang belum dipakai?')){await db.from('invites').delete().eq('form_id',id).eq('kind',kind).eq('used',used);load()}}
 async function delI(id){if(confirm('Hapus link ini?')){await db.from('invites').delete().eq('id',id);load()}}
 load();
 </script></body></html>
