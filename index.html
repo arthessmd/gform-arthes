@@ -7,6 +7,9 @@
 <label>Tanggal turnamen</label><input id="dt" type="date"><label>Deskripsi singkat (boleh kosong)</label><input id="ds">
 <div class="cols2"><div><label>Kuota tim (0 = tanpa batas)</label><input id="qt" type="number" min="0" value="0"></div>
 <div><label>Kuota solo (0 = tanpa batas)</label><input id="qs" type="number" min="0" value="0"></div></div>
+<div class="cols2"><div><label>Link grup Tim (tampil setelah berhasil daftar)</label><input id="gt" placeholder="https://chat.whatsapp.com/..."></div>
+<div><label>Link grup Solo (tampil setelah berhasil daftar)</label><input id="gs" placeholder="https://chat.whatsapp.com/..."></div></div>
+<label>Pesan tambahan di halaman berhasil (boleh kosong)</label><input id="gn" placeholder="Contoh: Wajib masuk grup sebelum hari H">
 <div class="row"><button class="on" onclick="create()">Buat form</button></div></div>
 <div id="new"></div><h2>Form yang sudah dibuat</h2><div id="l"></div></div>
 <script src="config.js"></script>
@@ -34,9 +37,16 @@ function draw(){const open=new Set([...document.querySelectorAll('details[open]'
  <div class="row"><input id="n${f.id}" type="number" min="1" max="200" value="5" style="width:90px"><button class="on" onclick="gen('${f.id}')">Buat link ${nm} satu kali pakai</button><button onclick="cpAll('${f.id}',this)">Salin semua link ${nm} belum dipakai (${un.length})</button></div>
  <details id="${iK}" ${open.has(iK)?'open':''}><summary>Link ${nm} (${iv.length-un.length} dipakai dari ${iv.length})</summary><div class="row"><button onclick="clrI('${f.id}',true)">Hapus semua link ${nm} terpakai (${iv.length-un.length})</button><button onclick="clrI('${f.id}',false)">Hapus semua link ${nm} belum dipakai (${un.length})</button></div><div style="overflow-x:auto"><table>${iv.map((x,k)=>`<tr><td>${k+1}</td><td>${x.used?'Dipakai: '+esc(x.used_by||x.team_name):'Belum dipakai'}</td><td style="word-break:break-all"><small>${x.used?'':link(x.token)}</small></td><td>${x.used?'':`<button onclick="cp(this,'${link(x.token)}')">Salin</button>`}</td><td><button onclick="delI('${x.id}')">Hapus link</button></td></tr>`).join('')}</table></div></details>
  <details id="${rK}" ${open.has(rK)?'open':''}><summary>Daftar pendaftar ${nm} (${rs.length})</summary><div style="overflow-x:auto"><table><tr>${head}</tr>${body||'<tr><td colspan="6" class="mut">Belum ada pendaftar '+nm+'.</td></tr>'}</table></div></details>
+ <details id="g${f.id}" ${open.has('g'+f.id)?'open':''}><summary>Link grup &amp; pesan setelah berhasil daftar</summary>
+ <label>Link grup Tim</label><input id="gt${f.id}" value="${esc(f.group_link_team)}" placeholder="https://chat.whatsapp.com/...">
+ <label>Link grup Solo</label><input id="gs${f.id}" value="${esc(f.group_link_solo)}" placeholder="https://chat.whatsapp.com/...">
+ <label>Pesan tambahan (boleh kosong)</label><input id="gn${f.id}" value="${esc(f.success_note)}">
+ <p class="mut" style="margin:6px 0">Hanya muncul di halaman berhasil, setelah peserta selesai mengirim form. Kosongkan kalau tidak perlu.</p>
+ <div class="row"><button class="on" onclick="saveG('${f.id}')">Simpan</button></div></details>
  <div class="row"><button onclick="cpTxt('${f.id}',this)">Salin teks bracket</button><button onclick="dlTxt('${f.id}')">Unduh TXT</button><button onclick="dlXls('${f.id}')">Unduh Excel (Tim &amp; Solo)</button><button onclick="tog('${f.id}',${!f.is_open})">${f.is_open?'Tutup form':'Buka form'}</button><button onclick="delF('${f.id}')">Hapus form</button></div></div>`}).join('')||'<p class="mut">Belum ada form.</p>'}
 async function create(){const d=$('#dt').value;if(!d)return alert('Pilih tanggal dulu.');
- const {data,error}=await db.from('forms').insert({title:fmt(d),event_date:d,description:$('#ds').value.trim(),quota:+$('#qt').value||0,solo_quota:+$('#qs').value||0}).select().single();
+ const bl=[$('#gt').value,$('#gs').value].map(x=>x.trim()).filter(Boolean).find(x=>!/^https?:\/\//i.test(x));if(bl)return alert('Link grup harus diawali http:// atau https://');
+ const {data,error}=await db.from('forms').insert({title:fmt(d),event_date:d,description:$('#ds').value.trim(),quota:+$('#qt').value||0,solo_quota:+$('#qs').value||0,group_link_team:$('#gt').value.trim(),group_link_solo:$('#gs').value.trim(),success_note:$('#gn').value.trim()}).select().single();
  if(error)return alert(error.message);
  $('#new').innerHTML=`<div class="panel ok"><b>Form ${esc(data.title)} dibuat.</b> Sekarang buat link satu kali pakai (tim atau solo) untuk peserta di bagian bawah.</div>`;load()}
 async function gen(id){const n=Math.min(200,Math.max(1,+$('#n'+id).value||1)),kind=tab(id);
@@ -54,6 +64,10 @@ function dlXls(id){const [f,r]=get(id),T=r.filter(x=>!isSolo(x)),S=r.filter(isSo
  if(teams.length||!solos.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(teams),'Tim');
  if(solos.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(solos),'Solo');
  XLSX.writeFile(wb,'pendaftaran-'+f.title.replace(/\s/g,'-')+'.xlsx')}
+async function saveG(id){const v=k=>$('#'+k+id).value.trim(),t=v('gt'),s=v('gs');
+ if([t,s].some(x=>x&&!/^https?:\/\//i.test(x)))return alert('Link grup harus diawali http:// atau https://');
+ const {error}=await db.from('forms').update({group_link_team:t,group_link_solo:s,success_note:v('gn')}).eq('id',id);
+ if(error)return alert(error.message);alert('Tersimpan.');load()}
 async function tog(id,v){await db.from('forms').update({is_open:v}).eq('id',id);load()}
 async function delF(id){if(confirm('Hapus form ini beserta semua link dan pendaftarnya?')){await db.from('forms').delete().eq('id',id);load()}}
 async function delR(id){if(confirm('Hapus pendaftar ini?')){await db.from('registrations').delete().eq('id',id);load()}}

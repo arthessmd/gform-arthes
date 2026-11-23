@@ -51,10 +51,12 @@ $('#f').onsubmit=async e=>{e.preventDefault();const go=$('#go');go.disabled=true
   label=v('tn');args={p_token:tk,p_team:label,p_leader:v('ld'),p_wa:v('wa'),p_gid:v('gid'),
    p_players:[1,2,3,4,5].map(k=>v('p'+k)),p_subs:v('sb').split(',').map(s=>s.trim()).filter(Boolean)};
  }
- const {data:r,error}=await db.rpc('submit_registration',args);
+ const {data:res,error}=await db.rpc('submit_registration',args);
  if(error)return bad('Gagal mengirim: '+error.message);
+ const r=res&&res.status;
  if(r==='duplicate')return bad(solo()?'ID game ini sudah terdaftar untuk tanggal ini.':'Nama tim sudah terdaftar. Gunakan nama lain.');
  if(r==='incomplete')return bad('Semua kolom wajib diisi.');
  if(r!=='ok')return say(dead[r]||dead.invalid);
- say(`<h2 style="margin-top:0">Pendaftaran berhasil</h2><p>${solo()?'Peserta solo':'Tim'} <b>${esc(label)}</b> sudah terdaftar untuk ${esc(S.title)}.</p><p class="mut">Link ini sudah tidak bisa dipakai lagi. Simpan screenshot ini sebagai bukti.</p>`)};
+ const gl=/^https?:\/\//i.test(res.group_link||'')?res.group_link:'';
+ say(`<h2 style="margin-top:0">Berhasil mendaftar</h2><p>${solo()?'Peserta solo':'Tim'} <b>${esc(label)}</b> sudah terdaftar untuk ${esc(S.title)}.</p>${res.note?`<p>${esc(res.note)}</p>`:''}${gl?`<p>Silakan gabung ke grup berikut:</p><div class="row"><a class="btn gold" href="${esc(gl)}" target="_blank" rel="noopener">Gabung grup</a></div><p class="mut" style="word-break:break-all">${esc(gl)}</p>`:''}<p class="mut">Link pendaftaran ini sudah tidak bisa dipakai lagi. Simpan link grup di atas atau screenshot halaman ini, karena tidak akan ditampilkan lagi.</p>`)};
 </script></body></html>
